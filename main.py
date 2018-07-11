@@ -1,13 +1,21 @@
 from graphmaker.graph import Graph
-from rundmcmc.defaults import BasicChain
+from rundmcmc.defaults import BasicChain, default_constraints
 from rundmcmc.partition import Partition
 from rundmcmc.updaters import (votes_updaters, Tally, perimeters, exterior_boundaries,
                                interior_boundaries, boundary_nodes, cut_edges, polsby_popper,
                                cut_edges_by_part)
 from rundmcmc.scores import mean_median, mean_thirdian, efficiency_gap
-from rundmcmc.output import pipe_to_table, p_value_report
+from rundmcmc.run import pipe_to_table
+from rundmcmc.output import p_value_report
+from rundmcmc.chain import MarkovChain
+from rundmcmc.validity import Validator, within_percent_of_ideal_population, L1_reciprocal_polsby_popper, UpperBound
+from rundmcmc.accept import always_accept
+from rundmcmc.proposals import propose_random_flip
 
 import functools
+import pprint
+
+plans = ['CD_CR', 'CD_remedia', 'GOV_4_1', 'TS_4_1']
 
 
 def run_pa(plan='CD_CR'):
@@ -39,8 +47,24 @@ def run_pa(plan='CD_CR'):
     initial_scores = {key: score(partition)
                       for key, score in scores.items()}
 
-    chain = BasicChain(partition, total_steps=1000)
+    population_constraint = within_percent_of_ideal_population(partition, 0.01)
+
+    compactness_limit = L1_reciprocal_polsby_popper(partition) * 1.01
+    compactness_constraint = UpperBound(
+        L1_reciprocal_polsby_popper, compactness_limit)
+
+    is_valid = Validator(default_constraints +
+                         [population_constraint, compactness_constraint])
+
+    chain = MarkovChain(propose_random_flip, is_valid,
+                        always_accept, partition, total_steps=1000000)
+
+    # chain = BasicChain(partition, total_steps=1000000)
 
     table = pipe_to_table(chain, scores)
 
     return {key: p_value_report(key, table[key], initial_scores[key]) for key in scores}
+
+
+if __name__ == '__main__':
+    pprint.pprint(run_pa())
