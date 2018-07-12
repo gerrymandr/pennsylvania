@@ -53,7 +53,7 @@ def main(shapefile_path='./wes_unitsPA/wes_units_PA.shp', graph_path='wes_graph.
                       for node in pa.graph.nodes}
 
         try:
-        plot_plan(shape, assignment, f"./plots/{plan}_after.svg")
+            plot_plan(shape, assignment, f"./plots/{plan}_after.svg")
         except Exception:
             log.error("There was an error while trying to plot", exc_info=1)
 
@@ -70,11 +70,11 @@ def plot_plan(df, plan, filepath):
 
     clean_df = df.dropna(subset=['assignment'])
 
-    clean_df = reprojected(clean_df)
+    # clean_df = reprojected(clean_df)
 
     _, ax = plt.subplots(1)
     clean_df.plot(ax=ax, linewidth=0.5, edgecolor='0.5',
-                  column='assignment', categorical=True)
+                  column='assignment', categorical=True, cmap='tab20')
     ax.set_axis_off()
 
     plt.axis('equal')
@@ -82,4 +82,20 @@ def plot_plan(df, plan, filepath):
 
 
 if __name__ == '__main__':
-    main()
+    shapefile_path = './data/wes_unitsPA/wes_units_PA.shp'
+    shape = geopandas.read_file(shapefile_path)
+
+    pa = Graph.load('./wes_graph2.json')
+
+
+    for node in pa.graph.nodes:
+        if 'remedial' not in pa.graph.nodes[node]:
+            print(node)
+
+    print(
+        len([node for node in pa.graph.nodes if 'remedial' not in pa.graph.nodes[node]]))
+
+    assignment = {node: pa.graph.nodes[node]["remedial"]
+                  for node in pa.graph.nodes}
+
+    plot_plan(shape, assignment, './plots/remedial_matched.png')
