@@ -5,11 +5,10 @@ from rundmcmc.updaters import (votes_updaters, Tally, perimeters, exterior_bound
                                interior_boundaries, boundary_nodes, cut_edges, polsby_popper,
                                cut_edges_by_part)
 from rundmcmc.scores import mean_median, mean_thirdian, efficiency_gap
-from rundmcmc.run import pipe_to_table
-from rundmcmc.output import p_value_report
+from rundmcmc.output import p_value_report, ChainOutputTable
 from rundmcmc.chain import MarkovChain
 from rundmcmc.validity import (Validator, within_percent_of_ideal_population,
-                               L_minus_1_polsby_popper, UpperBound, no_worse_L_minus_1_polsby_popper)
+                               L_minus_1_polsby_popper, UpperBound, SelfConfiguringLowerBound)
 from rundmcmc.accept import always_accept
 from rundmcmc.proposals import propose_random_flip
 
@@ -17,6 +16,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import datetime
+import math
 import sys
 import functools
 import json
@@ -27,6 +28,29 @@ elections = {
     '2016_Presidential': ['T16PRESD', 'T16PRESR'],
     '2016_Senate': ['T16SEND', 'T16SENR']
 }
+
+
+def pipe_to_table(chain, handlers, display=True, display_frequency=100,
+                  bin_frequency=100):
+    table = ChainOutputTable()
+    display_interval = math.floor(len(chain) / display_frequency)
+    counter = 0
+    now = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
+    with open(f"./logs/flips_{now}.log", 'w') as f:
+        f.write("{ \"flips\": [\n")
+        for state in chain:
+            row = {key: handler(state) for key, handler in handlers.items()}
+            f.write(json.dumps(state.flips) + ",")
+            if counter % display_interval == 0:
+                if display:
+                    print(f"Step {counter}")
+                    print(row)
+            if counter % bin_frequency == 0:
+                table.append(row)
+                f.write("\n")
+            counter += 1
+        f.write("\n]\n}\n")
+    return table
 
 
 def get_scores(election):
@@ -48,7 +72,7 @@ def set_up_chain(plan, total_steps, adjacency_type='queen'):
 
     updaters = {
         **votes_updaters(elections["2016_Presidential"], election_name="2016_Presidential"),
-        **votes_updaters(elections["2016_Senate"], election_name="2016_Presidential"),
+        **votes_updaters(elections["2016_Senate"], election_name="2016_Senate"),
         'population': Tally('population', alias='population'),
         'perimeters': perimeters,
         'exterior_boundaries': exterior_boundaries,
@@ -63,15 +87,17 @@ def set_up_chain(plan, total_steps, adjacency_type='queen'):
     partition = Partition(graph, assignment, updaters)
 
     population_constraint = within_percent_of_ideal_population(partition, 0.01)
+    compactness_constraint = SelfConfiguringLowerBound(
+        L_minus_1_polsby_popper, epsilon=0.1)
 
     is_valid = Validator(default_constraints +
-                         [population_constraint, no_worse_L_minus_1_polsby_popper])
+                         [population_constraint, compactness_constraint])
 
     return partition, MarkovChain(propose_random_flip, is_valid,
                                   always_accept, partition, total_steps)
 
 
-def run_pa(plan, total_steps=1000000):
+def run_pa(plan, total_steps=100000):
     partition, chain = set_up_chain(plan, total_steps)
 
     scores = {key: value for election in elections for key,
@@ -85,21 +111,15 @@ def run_pa(plan, total_steps=1000000):
     table = pipe_to_table(chain, scores)
 
     for score in scores:
-        plt.hist(table[score], bins=50)
+        plt.hist(table[score], bins=100)
         plt.title(score.replace('_', ' '))
         plt.axvline(x=initial_scores[score], color='r')
-        plt.savefig(f"./plots/{score}.svg")
+        plt.savefig(f"./plots/{plan}/{score}.svg")
         plt.close()
 
     metadata = {
         'plan': plan,
-        'total_steps': total_steps,
-        'constraints': [
-            'L^{-1} Polsby-Popper no more than 0.05 worse than the initial plan.',
-            'District populations within one percent of ideal.',
-            'Districts are contiguous.',
-            'No more county splits than the original plan.'
-        ]
+        'total_steps': total_steps
     }
 
     report = {key: p_value_report(
