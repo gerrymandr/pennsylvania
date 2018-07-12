@@ -47,8 +47,8 @@ def set_up_chain(plan, total_steps, adjacency_type='queen'):
     assignment = {node: graph.nodes[node][plan] for node in graph.nodes}
 
     updaters = {
-        **votes_updaters(elections["2016_Presidential"]),
-        **votes_updaters(elections["2016_Senate"]),
+        **votes_updaters(elections["2016_Presidential"], election_name="2016_Presidential"),
+        **votes_updaters(elections["2016_Senate"], election_name="2016_Presidential"),
         'population': Tally('population', alias='population'),
         'perimeters': perimeters,
         'exterior_boundaries': exterior_boundaries,
@@ -84,15 +84,10 @@ def run_pa(plan, total_steps=1000000):
 
     table = pipe_to_table(chain, scores)
 
-    initial_scores = {key: score(partition)
-                      for key, score in scores.items()
-                      if key != 'L_minus_1_Polsby-Popper'}
-
-    table = pipe_to_table(chain, scores)
-
     for score in scores:
         plt.hist(table[score], bins=50)
         plt.title(score.replace('_', ' '))
+        plt.axvline(x=initial_scores[score], color='r')
         plt.savefig(f"./plots/{score}.svg")
         plt.close()
 
@@ -103,7 +98,7 @@ def run_pa(plan, total_steps=1000000):
             'L^{-1} Polsby-Popper no more than 0.05 worse than the initial plan.',
             'District populations within one percent of ideal.',
             'Districts are contiguous.',
-            'No more county splits than the orginal plan.'
+            'No more county splits than the original plan.'
         ]
     }
 
